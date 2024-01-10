@@ -48,16 +48,6 @@ def ad_connect(ad_user, ad_user_password, ad_kds, adca):
     sys.exit(1)
 #  END Connect
 
-def get_user_ad_key(ad_connection, ad_users_dn, username: str):
-    search_filter = f'(sAMAccountName={username})'
-    ad_connection.search(search_base=ad_users_dn, search_filter=search_filter, search_scope=SUBTREE,
-                         attributes=['altSecurityIdentities'])
-    if ad_connection.entries:
-        user = ad_connection.entries[0]
-        altSecurityIdentities = user.entry_attributes_as_dict['altSecurityIdentities']
-        return altSecurityIdentities
-    else:
-        return None
 
 # Получает ключи SSH пользователя из AD с кэшированием и истечением срока действия кэша.
 def get_user_ad_key_with_expiry(ad_connection, ad_users_dn, username: str, cache_file, expiry):
