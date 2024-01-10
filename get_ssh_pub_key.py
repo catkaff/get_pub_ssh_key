@@ -65,7 +65,6 @@ def get_user_ad_key_with_expiry(ad_connection, ad_users_dn, username: str, cache
 
         # Проверяем, есть ли данные в кэше и не истек ли их срок
         if cached_data and current_time - cached_data['timestamp'] < expiry:
-#            print(f'Не истёк {expiry}')
             return cached_data['keys']
 
         # Если данных нет в кэше или истек срок, запрашиваем из AD
