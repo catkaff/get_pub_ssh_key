@@ -208,8 +208,7 @@ if __name__ == '__main__':
     level = logging.getLevelName(script_log_level)
     # Настраиваем логгирование всех действий скрипта в файл
     #logging.basicConfig(filename=script_log_file, level=level, format=log_format, datefmt=log_datefmt)
-    setup_logging(os.getenv('script_log_file'), logging.getLevelName(os.getenv('script_log_level')),
-                 os.getenv('log_format'), os.getenv('log_datefmt'), os.getenv('log_encoding'))
+    setup_logging(script_log_file, logging.getLevelName(script_log_level), log_format, log_datefmt, log_encoding)
 
     # define a Handler which writes INFO messages or higher to the sys.stderr
     # Здесь настройка вывода выхлопа информационных сообщений скрипта еще и в консоль помимо записи лога файла
