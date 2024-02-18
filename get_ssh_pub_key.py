@@ -10,15 +10,23 @@ import time
 # проверяет, можно ли записать в файл логов. Если нет, она настраивает логирование в stderr. Это предотвращает прерывание скрипта из-за ошибок доступа к файлу логов.
 def setup_logging(script_log_file, script_log_level, log_format, log_datefmt, log_encoding):
     try:
+        # Проверяем, существует ли файл или его директория. Если нет, пытаемся создать.
+        if not os.path.exists(script_log_file):
+            os.makedirs(os.path.dirname(script_log_file), exist_ok=True)  # Создаем директорию, если ее нет
+            with open(script_log_file, 'w'):  # Создаем файл лога
+                pass  # Файл успешно создан, дальше идет настройка логгирования
+        # Проверяем, можем ли мы записать в файл
         if os.access(script_log_file, os.W_OK):
-            logging.basicConfig(filename=script_log_file, level=script_log_level, format=log_format, datefmt=log_datefmt, encoding=log_encoding)
+            logging.basicConfig(filename=script_log_file, level=script_log_level, format=log_format,
+                                datefmt=log_datefmt, encoding=log_encoding)
         else:
+            # Если не можем записать в файл, настраиваем логгирование на stderr
             logging.basicConfig(level=script_log_level, format=log_format, datefmt=log_datefmt)
             logging.warning("Logging to file is not possible. Logging to stderr instead.")
     except Exception as e:
+        # В случае любых других исключений также настраиваем логгирование на stderr
         logging.basicConfig(level=script_log_level, format=log_format, datefmt=log_datefmt)
         logging.warning(f"Error setting up file logging: {e}. Logging to stderr instead.")
-
 def format_username(username: str, ad_domain: str, ipa_domain: str) -> str:
     if '@dserver.cat' in username:
         return username.replace(ad_domain,'')
@@ -50,9 +58,8 @@ def ad_connect(ad_user, ad_user_password, ad_kds, adca):
 
 
 # Получает ключи SSH пользователя из AD с кэшированием и истечением срока действия кэша.
-def get_user_ad_key_with_expiry(ad_connection, ad_users_dn, username: str, cache_file, expiry):
+def get_user_ad_key_with_expiry(ad_user, ad_user_password, ad_kds, adca, ad_users_dn, username: str, cache_file, expiry):
     """
-    :param ad_connection: соединение с Active Directory
     :param ad_users_dn: DN (Distinguished Name) для пользователей в AD
     :param username: имя пользователя
     :param cache_file: путь к файлу кэша
@@ -68,6 +75,8 @@ def get_user_ad_key_with_expiry(ad_connection, ad_users_dn, username: str, cache
             return cached_data['keys']
 
         # Если данных нет в кэше или истек срок, запрашиваем из AD
+                # Соединяемся с АД согласно полученным кредам
+        ad_connection = ad_connect(ad_user, ad_user_password, ad_kds, adca)
         search_filter = f'(sAMAccountName={username})'
         ad_connection.search(search_base=ad_users_dn, search_filter=search_filter, search_scope=SUBTREE,
                              attributes=['altSecurityIdentities'])
@@ -76,8 +85,10 @@ def get_user_ad_key_with_expiry(ad_connection, ad_users_dn, username: str, cache
             altSecurityIdentities = user.entry_attributes_as_dict['altSecurityIdentities']
             # Сохраняем результат в кэш с временной меткой
             cache[username] = {'keys': altSecurityIdentities, 'timestamp': current_time}
+            ad_connection.unbind()
             return altSecurityIdentities
         else:
+            ad_connection.unbind()
             return None
 
 # Читаем локальные для хоста публичные ключи
@@ -96,32 +107,11 @@ def read_local_public_key(user: str):
 if __name__ == '__main__':
 
     # Попытка загрузить переменные окружения из файла .conf
-    if not load_dotenv('/opt/get_pub_ssh_key/get_ssh_key.conf'):
+    if not load_dotenv('get_ssh_key.conf'):
         logging.error("Конфигурационный файл не найден.")
         sys.exit(1)
 
     # Получение настроек из конфигурационного файла:
-    ipaservers = os.getenv('ipa_server')
-    if ipaservers is None:
-        logging.error(f'Не удалось загрузить из конфигурационного файла значение: ipa_server')
-        sys.exit(1)
-    # Разделение строки на список серверов с использованием регулярных выражений
-    ipa_servers = re.split(r'\s*,\s*', ipaservers.strip())
-
-    ipaver_ssl = os.getenv('ipa_server_ca')
-    if ipaver_ssl is None:
-        logging.error(f'Не удалось загрузить из конфигурационного файла значение: ipa_server_ca')
-        sys.exit(1)
-
-    ipausername = os.getenv('ipa_user_admin')
-    if ipausername is None:
-        logging.error(f'Не удалось загрузить из конфигурационного файла значение: ipa_user_admin')
-        sys.exit(1)
-
-    ipapassword = os.getenv('ipa_user_admin_passwd')
-    if ipapassword is None:
-        logging.error(f'Не удалось загрузить из конфигурационного файла значение: ipa_user_admin_passwd')
-        sys.exit(1)
 
     ad_groups_dn = os.getenv('ad_groups_dn')
     if ad_groups_dn is None:
@@ -207,18 +197,7 @@ if __name__ == '__main__':
     # Получим числовое значение уровня логирования
     level = logging.getLevelName(script_log_level)
     # Настраиваем логгирование всех действий скрипта в файл
-    #logging.basicConfig(filename=script_log_file, level=level, format=log_format, datefmt=log_datefmt)
     setup_logging(script_log_file, logging.getLevelName(script_log_level), log_format, log_datefmt, log_encoding)
-
-    # define a Handler which writes INFO messages or higher to the sys.stderr
-    # Здесь настройка вывода выхлопа информационных сообщений скрипта еще и в консоль помимо записи лога файла
-#    console = logging.StreamHandler()
-#    console.setLevel(logging.INFO)
-    # add the handler to the root logger
-#    logging.getLogger('').addHandler(console)
-
-    # Соединяемся с АД согласно полученным кредам
-    ad_connection = ad_connect(ad_user, ad_user_password, ad_kds, adca)
 
     if len(sys.argv) > 1:  # проверяем, есть ли аргументы командной строки
         formatted_username = format_username(sys.argv[1], ad_domain, ipa_domain)
@@ -231,12 +210,7 @@ if __name__ == '__main__':
             sys.exit(0)
 
 # Если же локальной УЗ нет, проверяем есть ли ключ для пользователя из АД
-        user_ad_key = get_user_ad_key_with_expiry(ad_connection, ad_users_dn, formatted_username, cache_file, expiry)
+        user_ad_key = get_user_ad_key_with_expiry( ad_user, ad_user_password, ad_kds, adca, ad_users_dn, formatted_username, cache_file, expiry)
         if user_ad_key:  # проверка, что dn_user не пустой и не None
             print(''.join(user_ad_key))
-            ad_connection.unbind()
             sys.exit(0)
-
-
-# END - закрываем соединение с АД и FreeIPA
-    ad_connection.unbind()

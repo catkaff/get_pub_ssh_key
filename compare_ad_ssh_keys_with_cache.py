@@ -10,12 +10,21 @@ import time
 # проверяет, можно ли записать в файл логов. Если нет, она настраивает логирование в stderr. Это предотвращает прерывание скрипта из-за ошибок доступа к файлу логов.
 def setup_logging(script_log_file, script_log_level, log_format, log_datefmt, log_encoding):
     try:
+        # Проверяем, существует ли файл или его директория. Если нет, пытаемся создать.
+        if not os.path.exists(script_log_file):
+            os.makedirs(os.path.dirname(script_log_file), exist_ok=True)  # Создаем директорию, если ее нет
+            with open(script_log_file, 'w'):  # Создаем файл лога
+                pass  # Файл успешно создан, дальше идет настройка логгирования
+        # Проверяем, можем ли мы записать в файл
         if os.access(script_log_file, os.W_OK):
-            logging.basicConfig(filename=script_log_file, level=script_log_level, format=log_format, datefmt=log_datefmt, encoding=log_encoding)
+            logging.basicConfig(filename=script_log_file, level=script_log_level, format=log_format,
+                                datefmt=log_datefmt, encoding=log_encoding)
         else:
+            # Если не можем записать в файл, настраиваем логгирование на stderr
             logging.basicConfig(level=script_log_level, format=log_format, datefmt=log_datefmt)
             logging.warning("Logging to file is not possible. Logging to stderr instead.")
     except Exception as e:
+        # В случае любых других исключений также настраиваем логгирование на stderr
         logging.basicConfig(level=script_log_level, format=log_format, datefmt=log_datefmt)
         logging.warning(f"Error setting up file logging: {e}. Logging to stderr instead.")
 
@@ -174,13 +183,6 @@ if __name__ == '__main__':
     level = logging.getLevelName(script_log_level)
     # Настраиваем логгирование всех действий скрипта в файл
     setup_logging(script_log_file, logging.getLevelName(script_log_level), log_format, log_datefmt, log_encoding)
-
-    # define a Handler which writes INFO messages or higher to the sys.stderr
-    # Здесь настройка вывода выхлопа информационных сообщений скрипта еще и в консоль помимо записи лога файла
-    console = logging.StreamHandler()
-    console.setLevel(logging.INFO)
-    # add the handler to the root logger
-    logging.getLogger('').addHandler(console)
 
     # Соединяемся с АД согласно полученным кредам
     ad_connection = ad_connect(ad_user, ad_user_password, ad_kds, adca)
