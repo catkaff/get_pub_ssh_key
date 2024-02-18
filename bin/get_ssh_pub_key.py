@@ -106,12 +106,23 @@ def read_local_public_key(user: str):
 # Главная программа
 # SSH_GET_PUBKEY берем из /etc/environment
 if __name__ == '__main__':
-    
+
+    level = logging.getLevelName('INFO')
+    # Настраиваем логгирование всех действий скрипта в файл
+    setup_logging('/var/log/get_ssh_pub_key.log', logging.getLevelName('INFO'), '%(asctime)s.%(msecs)03d %(levelname)s %(module)s - %(funcName)s: %(message)s', '%Y-%m-%d %H:%M:%S', 'utf-8')
+
+
     # Получаем путь к базовой директории из переменной окружения
     base_path = os.getenv('SSH_GET_PUBKEY')
-    
+
+# Здесь возникает проблемка передачи переменной окружения в sshd
+# Решил так "/etc/ssh/sshd_config":
+
+# AuthorizedKeysCommand /usr/bin/env SSH_GET_PUBKEY=/opt/get_pub_ssh_key /opt/get_pub_ssh_key/bin/get_ssh_pub_key.py %u
+# AuthorizedKeysCommandUser root
+
     if base_path is None:
-        logging.error("Переменная окружения SSH_GET_PUBKEY не установлена.")
+        logging.info("Переменная окружения SSH_GET_PUBKEY не установлена.")
         sys.exit(1)
 
     # Строим путь к файлу конфигурации и к файлу базы данных
@@ -123,7 +134,7 @@ if __name__ == '__main__':
         sys.exit(1)
 
     # Попытка загрузить переменные окружения из файла .conf
-    if not load_dotenv(config_file_path):
+    if not load_dotenv (config_file_path):
         logging.error("Конфигурационный файл не найден.")
         sys.exit(1)
 
