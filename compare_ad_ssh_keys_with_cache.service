@@ -3,7 +3,8 @@ Description=Compare AD ssh_keys with cache
 
 [Service]
 Type=simple
-ExecStart=/opt/get_pub_ssh_key/compare_ad_ssh_keys_with_cache.py /opt/get_pub_ssh_key/get_ssh_key.conf
+Environment="SSH_GET_PUBKEY=/opt/get_pub_ssh_key"
+ExecStart=/bin/bash -c '${SSH_GET_PUBKEY}/bin/compare_ad_ssh_keys_with_cache.py'
 
 [Install]
 WantedBy=multi-user.target

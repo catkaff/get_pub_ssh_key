@@ -2,8 +2,10 @@
 # -*- coding: utf-8 -*-
 
 import shelve
+import argparse
+import sys
 
-def print_ssh_keys_cache(cache_file='ssh_keys_cache.db'):
+def print_ssh_keys_cache(cache_file):
     """
     Выводит все ключи и значения из файла кэша ssh_keys_cache.db.
     """
@@ -24,6 +26,19 @@ def print_ssh_keys_cache(cache_file='ssh_keys_cache.db'):
     except Exception as e:
         print(f"Произошла ошибка при чтении файла кэша: {e}")
 
+def main():
+    parser = argparse.ArgumentParser(description="Выводит все ключи и значения из файла кэша ssh_keys_cache.db.")
+    parser.add_argument("cache_file", nargs='?', default="ssh_keys_cache.db", help="Путь к файлу кэша ssh_keys_cache.db")
+    
+    args = parser.parse_args()
+
+    # Если аргументы не были предоставлены, выводим справку
+    if len(sys.argv) == 1:
+        parser.print_help(sys.stderr)
+        sys.exit(1)
+
+    print_ssh_keys_cache(args.cache_file)
+
 if __name__ == '__main__':
-    print_ssh_keys_cache()
+    main()
 
