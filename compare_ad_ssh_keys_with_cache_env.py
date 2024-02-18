@@ -27,13 +27,6 @@ def setup_logging(script_log_file, script_log_level, log_format, log_datefmt, lo
         # В случае любых других исключений также настраиваем логгирование на stderr
         logging.basicConfig(level=script_log_level, format=log_format, datefmt=log_datefmt)
         logging.warning(f"Error setting up file logging: {e}. Logging to stderr instead.")
-def format_username(username: str, ad_domain: str, ipa_domain: str) -> str:
-    if '@dserver.cat' in username:
-        return username.replace(ad_domain,'')
-    elif '@kaff.cat' in username:
-        return username.replace(ipa_domain, '')
-    else:
-        return username
 
 # Функция соединения с АД по защищенному шифрованному соединению по 636 порту с использованием корневого сертификата домена.
 # AD connect
@@ -56,10 +49,10 @@ def ad_connect(ad_user, ad_user_password, ad_kds, adca):
     sys.exit(1)
 #  END Connect
 
-
 # Получает ключи SSH пользователя из AD с кэшированием и истечением срока действия кэша.
-def get_user_ad_key_with_expiry(ad_user, ad_user_password, ad_kds, adca, ad_users_dn, username: str, cache_file, expiry):
+def get_user_ad_key_with_expiry(ad_connection, ad_users_dn, username: str, cache_file, expiry):
     """
+    :param ad_connection: соединение с Active Directory
     :param ad_users_dn: DN (Distinguished Name) для пользователей в AD
     :param username: имя пользователя
     :param cache_file: путь к файлу кэша
@@ -72,11 +65,12 @@ def get_user_ad_key_with_expiry(ad_user, ad_user_password, ad_kds, adca, ad_user
 
         # Проверяем, есть ли данные в кэше и не истек ли их срок
         if cached_data and current_time - cached_data['timestamp'] < expiry:
+            logging.info(f'Не истёк {expiry}')
             return cached_data['keys']
 
+        logging.info(f'ИСТЕК {expiry}')
+
         # Если данных нет в кэше или истек срок, запрашиваем из AD
-                # Соединяемся с АД согласно полученным кредам
-        ad_connection = ad_connect(ad_user, ad_user_password, ad_kds, adca)
         search_filter = f'(sAMAccountName={username})'
         ad_connection.search(search_base=ad_users_dn, search_filter=search_filter, search_scope=SUBTREE,
                              attributes=['altSecurityIdentities'])
@@ -85,45 +79,39 @@ def get_user_ad_key_with_expiry(ad_user, ad_user_password, ad_kds, adca, ad_user
             altSecurityIdentities = user.entry_attributes_as_dict['altSecurityIdentities']
             # Сохраняем результат в кэш с временной меткой
             cache[username] = {'keys': altSecurityIdentities, 'timestamp': current_time}
-            ad_connection.unbind()
             return altSecurityIdentities
         else:
-            ad_connection.unbind()
             return None
 
-# Читаем локальные для хоста публичные ключи
-def read_local_public_key(user: str):
-    home_dir = f"/home/{user}"
-    auth_keys_path = os.path.join(home_dir, ".ssh", "authorized_keys")
-
-    if os.path.isfile(auth_keys_path):
-        with open(auth_keys_path, 'r') as f:
-            keys = f.readlines()
-        return keys
-    else:
-        return None
+# Функция для сравнения ключей из AD с кэшированными ключами
+def compare_and_update_keys(ad_connection, ad_users_dn, cache_file):
+    with shelve.open(cache_file) as cache:
+        for username, cached_data in cache.items():
+            search_filter = f'(sAMAccountName={username})'
+            ad_connection.search(search_base=ad_users_dn, search_filter=search_filter, search_scope=SUBTREE,
+                                 attributes=['altSecurityIdentities'])
+            if ad_connection.entries:
+                user = ad_connection.entries[0]
+                ad_keys = user.entry_attributes_as_dict['altSecurityIdentities']
+                if set(ad_keys) != set(cached_data['keys']):
+                    logging.info(f"Keys for user {username} have changed.")
+                    cache[username] = {'keys': ad_keys, 'timestamp': time.time()}
+                else:
+                    logging.info(f"No changes in keys for user {username}.")
+            else:
+                logging.warning(f"User {username} not found in AD.")
 
 # Главная программа
-# SSH_GET_PUBKEY берем из /etc/environment
 if __name__ == '__main__':
-    
-    # Получаем путь к базовой директории из переменной окружения
-    base_path = os.getenv('SSH_GET_PUBKEY')
-    
-    if base_path is None:
-        logging.error("Переменная окружения SSH_GET_PUBKEY не установлена.")
-        sys.exit(1)
 
-    # Строим путь к файлу конфигурации и к файлу базы данных
-    config_file_path = os.path.join(base_path, 'etc', 'get_ssh_key.conf')    
-
-    # Проверяем существование файла конфигурации
-    if not os.path.exists(config_file_path):
-        logging.error(f"Конфигурационный файл {config_file_path} не найден.")
-        sys.exit(1)
+    # Проверяем, передан ли аргумент с именем конфигурационного файла
+    if len(sys.argv) > 1:
+        config_file = sys.argv[1]
+    else:
+        config_file = 'get_ssh_key.conf'  # Значение по умолчанию
 
     # Попытка загрузить переменные окружения из файла .conf
-    if not load_dotenv(config_file_path):
+    if not load_dotenv(config_file):
         logging.error("Конфигурационный файл не найден.")
         sys.exit(1)
 
@@ -186,51 +174,21 @@ if __name__ == '__main__':
         logging.error(f'Не удалось загрузить из конфигурационного файла значение: log_encoding')
         sys.exit(1)
 
-    ad_domain = os.getenv('ad_domain')
-    if ad_domain is None:
-        logging.error(f'Не удалось загрузить из конфигурационного файла значение: ad_domain')
-        sys.exit(1)
-
-    ipa_domain = os.getenv('ipa_domain')
-    if ipa_domain is None:
-        logging.error(f'Не удалось загрузить из конфигурационного файла значение: ipa_domain')
-        sys.exit(1)
-
     cache_file = os.getenv('cache_file')
-    print(f'cache_file from config = {cache_file}')
     if cache_file is None:
         logging.error(f'Не удалось загрузить из конфигурационного файла значение: cache_file')
         sys.exit(1)
-    else:
-        cache_file = os.path.join(base_path, 'etc', cache_file)
-        print(f'cache_file from PATH = {cache_file}')
-
-    # Значение по умолчанию для expiry
-    DEFAULT_EXPIRY = 86400  # Например, 1 день = 86400 секунд
-    expiry = os.getenv('expiry', DEFAULT_EXPIRY)
-    try:
-        expiry = int(expiry)
-    except ValueError:
-        logging.error(f"Значение 'expiry' должно быть целым числом. Используется значение по умолчанию: {DEFAULT_EXPIRY}")
-        expiry = DEFAULT_EXPIRY
 
     # Получим числовое значение уровня логирования
     level = logging.getLevelName(script_log_level)
     # Настраиваем логгирование всех действий скрипта в файл
     setup_logging(script_log_file, logging.getLevelName(script_log_level), log_format, log_datefmt, log_encoding)
 
-    if len(sys.argv) > 1:  # проверяем, есть ли аргументы командной строки
-        formatted_username = format_username(sys.argv[1], ad_domain, ipa_domain)
+    # Соединяемся с АД согласно полученным кредам
+    ad_connection = ad_connect(ad_user, ad_user_password, ad_kds, adca)
 
-# Сначала смотрим есть ли локальный ключ или ключи для данного пользователя, так как это быстрее и приоритетнее при заходе под локальной УЗ
-        local_keys = read_local_public_key(formatted_username)
-        if local_keys:
-            for key in local_keys:
-                print(key, end="")
-            sys.exit(0)
+    # Сравнение и обновление ключей
+    compare_and_update_keys(ad_connection, ad_users_dn, cache_file)
 
-# Если же локальной УЗ нет, проверяем есть ли ключ для пользователя из АД
-        user_ad_key = get_user_ad_key_with_expiry( ad_user, ad_user_password, ad_kds, adca, ad_users_dn, formatted_username, cache_file, expiry)
-        if user_ad_key:  # проверка, что dn_user не пустой и не None
-            print(''.join(user_ad_key))
-            sys.exit(0)
+# END - закрываем соединение с АД
+    ad_connection.unbind()
