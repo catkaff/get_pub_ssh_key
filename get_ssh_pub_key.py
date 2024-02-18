@@ -197,13 +197,13 @@ if __name__ == '__main__':
         sys.exit(1)
 
     cache_file = os.getenv('cache_file')
-    print(f'cache_file from config = {cache_file}')
+    
     if cache_file is None:
         logging.error(f'Не удалось загрузить из конфигурационного файла значение: cache_file')
         sys.exit(1)
     else:
         cache_file = os.path.join(base_path, 'etc', cache_file)
-        print(f'cache_file from PATH = {cache_file}')
+        
 
     # Значение по умолчанию для expiry
     DEFAULT_EXPIRY = 86400  # Например, 1 день = 86400 секунд
