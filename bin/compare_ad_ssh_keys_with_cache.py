@@ -8,25 +8,33 @@ import shelve
 import time
 
 # проверяет, можно ли записать в файл логов. Если нет, она настраивает логирование в stderr. Это предотвращает прерывание скрипта из-за ошибок доступа к файлу логов.
-def setup_logging(script_log_file, script_log_level, log_format, log_datefmt, log_encoding):
+
+def setup_logging(script_log_file, script_log_level, log_format, log_datefmt, log_encoding='utf-8'):
+    # Получаем корневой логгер
+    logger = logging.getLogger()
+    # Устанавливаем уровень логирования
+    logger.setLevel(logging.getLevelName(script_log_level))
+
+    # Очищаем существующие обработчики, чтобы избежать дублирования сообщений
+    while logger.handlers:
+        logger.handlers.pop()
+
+    # Проверяем, существует ли директория для файла лога, и создаем ее при необходимости
+    log_dir = os.path.dirname(script_log_file)
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir, exist_ok=True)
+
+    # Настраиваем обработчик для записи логов в файл
     try:
-        # Проверяем, существует ли файл или его директория. Если нет, пытаемся создать.
-        if not os.path.exists(script_log_file):
-            os.makedirs(os.path.dirname(script_log_file), exist_ok=True)  # Создаем директорию, если ее нет
-            with open(script_log_file, 'w'):  # Создаем файл лога
-                pass  # Файл успешно создан, дальше идет настройка логгирования
-        # Проверяем, можем ли мы записать в файл
-        if os.access(script_log_file, os.W_OK):
-            logging.basicConfig(filename=script_log_file, level=script_log_level, format=log_format,
-                                datefmt=log_datefmt, encoding=log_encoding)
-        else:
-            # Если не можем записать в файл, настраиваем логгирование на stderr
-            logging.basicConfig(level=script_log_level, format=log_format, datefmt=log_datefmt)
-            logging.warning("Logging to file is not possible. Logging to stderr instead.")
+        file_handler = logging.FileHandler(script_log_file, encoding=log_encoding)
     except Exception as e:
-        # В случае любых других исключений также настраиваем логгирование на stderr
-        logging.basicConfig(level=script_log_level, format=log_format, datefmt=log_datefmt)
-        logging.warning(f"Error setting up file logging: {e}. Logging to stderr instead.")
+        # Если возникает ошибка при создании FileHandler, логируем в stderr
+        logging.basicConfig(level=logging.getLevelName(script_log_level), format=log_format, datefmt=log_datefmt)
+        logging.error(f"Failed to create log file handler: {e}. Logging to stderr instead.")
+        return
+
+    file_handler.setFormatter(logging.Formatter(log_format, datefmt=log_datefmt))
+    logger.addHandler(file_handler)
 
 # Функция соединения с АД по защищенному шифрованному соединению по 636 порту с использованием корневого сертификата домена.
 # AD connect
@@ -103,6 +111,18 @@ def compare_and_update_keys(ad_connection, ad_users_dn, cache_file):
 
 # Главная программа
 if __name__ == '__main__':
+
+    script_log_file = "/var/log/get_ssh_pub_key.log"
+    script_log_level = "INFO"
+    log_format = "%(asctime)s.%(msecs)03d %(levelname)s %(module)s - %(funcName)s: %(message)s"
+    log_datefmt = "%Y-%m-%d %H:%M:%S"
+    log_encoding = "utf-8"
+
+    # Получим числовое значение уровня логирования
+    level = logging.getLevelName(script_log_level)
+    # Настраиваем логгирование всех действий скрипта в файл
+    setup_logging(script_log_file, logging.getLevelName(script_log_level), log_format, log_datefmt, log_encoding)
+
     
     # Получаем путь к базовой директории из переменной окружения
     base_path = os.getenv('SSH_GET_PUBKEY')
@@ -158,43 +178,12 @@ if __name__ == '__main__':
         logging.error(f'Не удалось загрузить из конфигурационного файла значение: ad_user_password')
         sys.exit(1)
 
-    script_log_file = os.getenv('script_log_file')
-    if script_log_file is None:
-        logging.error(f'Не удалось загрузить из конфигурационного файла значение: script_log_file')
-        sys.exit(1)
-
-    script_log_level = os.getenv('script_log_level')
-    if script_log_level is None:
-        logging.error(f'Не удалось загрузить из конфигурационного файла значение: script_log_level')
-        sys.exit(1)
-
-    log_format = os.getenv('log_format')
-    if log_format is None:
-        logging.error(f'Не удалось загрузить из конфигурационного файла значение: log_format')
-        sys.exit(1)
-
-    log_datefmt = os.getenv('log_datefmt')
-    if log_datefmt is None:
-        logging.error(f'Не удалось загрузить из конфигурационного файла значение: log_datefmt')
-        sys.exit(1)
-
-    log_encoding = os.getenv('log_encoding')
-    if log_encoding is None:
-        logging.error(f'Не удалось загрузить из конфигурационного файла значение: log_encoding')
-        sys.exit(1)
-
     cache_file = os.getenv('cache_file')
     if cache_file is None:
         logging.error(f'Не удалось загрузить из конфигурационного файла значение: cache_file')
         sys.exit(1)
     else:
         cache_file = os.path.join(base_path, 'etc', cache_file)
-
-
-    # Получим числовое значение уровня логирования
-    level = logging.getLevelName(script_log_level)
-    # Настраиваем логгирование всех действий скрипта в файл
-    setup_logging(script_log_file, logging.getLevelName(script_log_level), log_format, log_datefmt, log_encoding)
 
     # Соединяемся с АД согласно полученным кредам
     ad_connection = ad_connect(ad_user, ad_user_password, ad_kds, adca)
