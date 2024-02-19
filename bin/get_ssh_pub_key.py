@@ -8,25 +8,33 @@ import shelve
 import time
 
 # проверяет, можно ли записать в файл логов. Если нет, она настраивает логирование в stderr. Это предотвращает прерывание скрипта из-за ошибок доступа к файлу логов.
-def setup_logging(script_log_file, script_log_level, log_format, log_datefmt, log_encoding):
+
+def setup_logging(script_log_file, script_log_level, log_format, log_datefmt, log_encoding='utf-8'):
+    # Получаем корневой логгер
+    logger = logging.getLogger()
+    # Устанавливаем уровень логирования
+    logger.setLevel(logging.getLevelName(script_log_level))
+
+    # Очищаем существующие обработчики, чтобы избежать дублирования сообщений
+    while logger.handlers:
+        logger.handlers.pop()
+
+    # Проверяем, существует ли директория для файла лога, и создаем ее при необходимости
+    log_dir = os.path.dirname(script_log_file)
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir, exist_ok=True)
+
+    # Настраиваем обработчик для записи логов в файл
     try:
-        # Проверяем, существует ли файл или его директория. Если нет, пытаемся создать.
-        if not os.path.exists(script_log_file):
-            os.makedirs(os.path.dirname(script_log_file), exist_ok=True)  # Создаем директорию, если ее нет
-            with open(script_log_file, 'w'):  # Создаем файл лога
-                pass  # Файл успешно создан, дальше идет настройка логгирования
-        # Проверяем, можем ли мы записать в файл
-        if os.access(script_log_file, os.W_OK):
-            logging.basicConfig(filename=script_log_file, level=script_log_level, format=log_format,
-                                datefmt=log_datefmt, encoding=log_encoding)
-        else:
-            # Если не можем записать в файл, настраиваем логгирование на stderr
-            logging.basicConfig(level=script_log_level, format=log_format, datefmt=log_datefmt)
-            logging.warning("Logging to file is not possible. Logging to stderr instead.")
+        file_handler = logging.FileHandler(script_log_file, encoding=log_encoding)
     except Exception as e:
-        # В случае любых других исключений также настраиваем логгирование на stderr
-        logging.basicConfig(level=script_log_level, format=log_format, datefmt=log_datefmt)
-        logging.warning(f"Error setting up file logging: {e}. Logging to stderr instead.")
+        # Если возникает ошибка при создании FileHandler, логируем в stderr
+        logging.basicConfig(level=logging.getLevelName(script_log_level), format=log_format, datefmt=log_datefmt)
+        logging.error(f"Failed to create log file handler: {e}. Logging to stderr instead.")
+        return
+
+    file_handler.setFormatter(logging.Formatter(log_format, datefmt=log_datefmt))
+    logger.addHandler(file_handler)
 
 # Обрезаем имя домена
 def format_username(username: str, ad_domain: str, ipa_domain: str) -> str:
