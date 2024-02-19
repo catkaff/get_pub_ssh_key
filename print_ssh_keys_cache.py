@@ -4,6 +4,7 @@
 import shelve
 import argparse
 import sys
+from datetime import datetime
 
 def print_ssh_keys_cache(cache_file):
     """
@@ -20,7 +21,10 @@ def print_ssh_keys_cache(cache_file):
                 print("SSH ключи:")
                 for ssh_key in value['keys']:
                     print(ssh_key)
-                print("Время кэширования:", value['timestamp'])
+
+                # Преобразование времени кэширования в человекочитаемый формат
+                cache_time = datetime.fromtimestamp(value['timestamp']).strftime('%Y-%m-%d %H:%M:%S')
+                print("Время кэширования:", cache_time)
                 print("-" * 30)
 
     except Exception as e:
