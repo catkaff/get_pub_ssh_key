@@ -27,10 +27,12 @@ def setup_logging(script_log_file, script_log_level, log_format, log_datefmt, lo
         # В случае любых других исключений также настраиваем логгирование на stderr
         logging.basicConfig(level=script_log_level, format=log_format, datefmt=log_datefmt)
         logging.warning(f"Error setting up file logging: {e}. Logging to stderr instead.")
+
+# Обрезаем имя домена
 def format_username(username: str, ad_domain: str, ipa_domain: str) -> str:
-    if '@dserver.cat' in username:
+    if ad_domain in username:
         return username.replace(ad_domain,'')
-    elif '@kaff.cat' in username:
+    elif ipa_domain in username:
         return username.replace(ipa_domain, '')
     else:
         return username
@@ -38,6 +40,12 @@ def format_username(username: str, ad_domain: str, ipa_domain: str) -> str:
 # Функция соединения с АД по защищенному шифрованному соединению по 636 порту с использованием корневого сертификата домена.
 # AD connect
 def ad_connect(ad_user, ad_user_password, ad_kds, adca):
+
+    # Проверяем, существует ли файл сертификата и доступен ли он для чтения
+    if not os.path.isfile(adca) or not os.access(adca, os.R_OK):
+        logging.error(f"CA certificate file does not exist or is not readable: {adca}")
+        sys.exit(1)
+
     tlset = Tls(validate=ssl.CERT_OPTIONAL, version=ssl.PROTOCOL_TLSv1_2, ca_certs_file=adca)
     timeout = 10
     for ad_kd in ad_kds:
@@ -72,7 +80,10 @@ def get_user_ad_key_with_expiry(ad_user, ad_user_password, ad_kds, adca, ad_user
 
         # Проверяем, есть ли данные в кэше и не истек ли их срок
         if cached_data and current_time - cached_data['timestamp'] < expiry:
+            logging.info(f'Public ssh key for the {username} in the cache and has not expired')
             return cached_data['keys']
+        else:
+            logging.info(f'Public ssh key for the {username} does not exist or has expired')
 
         # Если данных нет в кэше или истек срок, запрашиваем из AD
                 # Соединяемся с АД согласно полученным кредам
@@ -85,9 +96,11 @@ def get_user_ad_key_with_expiry(ad_user, ad_user_password, ad_kds, adca, ad_user
             altSecurityIdentities = user.entry_attributes_as_dict['altSecurityIdentities']
             # Сохраняем результат в кэш с временной меткой
             cache[username] = {'keys': altSecurityIdentities, 'timestamp': current_time}
+            logging.info(f"SSH keys for user {username} were successfully retrieved from AD and cached.")
             ad_connection.unbind()
             return altSecurityIdentities
         else:
+            logging.error(f"Failed to find user {username} in AD.")
             ad_connection.unbind()
             return None
 
@@ -97,20 +110,33 @@ def read_local_public_key(user: str):
     auth_keys_path = os.path.join(home_dir, ".ssh", "authorized_keys")
 
     if os.path.isfile(auth_keys_path):
-        with open(auth_keys_path, 'r') as f:
-            keys = f.readlines()
-        return keys
+        try:
+            with open(auth_keys_path, 'r') as f:
+                keys = f.readlines()
+            logging.info(f"Successfully read local public keys for user {user} from {auth_keys_path}.")
+            return keys
+        except Exception as e:
+            logging.error(f"Error reading local public keys for user {user} from {auth_keys_path}: {e}")
+            return None
     else:
+        logging.warning(f"Authorized keys file does not exist for user {user} at {auth_keys_path}.")
         return None
-
-# Главная программа
+    
+    
+    # Главная программа
 # SSH_GET_PUBKEY берем из /etc/environment
 if __name__ == '__main__':
 
-    level = logging.getLevelName('INFO')
-    # Настраиваем логгирование всех действий скрипта в файл
-    setup_logging('/var/log/get_ssh_pub_key.log', logging.getLevelName('INFO'), '%(asctime)s.%(msecs)03d %(levelname)s %(module)s - %(funcName)s: %(message)s', '%Y-%m-%d %H:%M:%S', 'utf-8')
+    script_log_file = "/var/log/get_ssh_pub_key.log"
+    script_log_level = "INFO"
+    log_format = "%(asctime)s.%(msecs)03d %(levelname)s %(module)s - %(funcName)s: %(message)s"
+    log_datefmt = "%Y-%m-%d %H:%M:%S"
+    log_encoding = "utf-8"
 
+    # Получим числовое значение уровня логирования
+    level = logging.getLevelName(script_log_level)
+    # Настраиваем логгирование всех действий скрипта в файл
+    setup_logging(script_log_file, logging.getLevelName(script_log_level), log_format, log_datefmt, log_encoding)
 
     # Получаем путь к базовой директории из переменной окружения
     base_path = os.getenv('SSH_GET_PUBKEY')
@@ -172,31 +198,6 @@ if __name__ == '__main__':
         logging.error(f'Не удалось загрузить из конфигурационного файла значение: ad_user_password')
         sys.exit(1)
 
-    script_log_file = os.getenv('script_log_file')
-    if script_log_file is None:
-        logging.error(f'Не удалось загрузить из конфигурационного файла значение: script_log_file')
-        sys.exit(1)
-
-    script_log_level = os.getenv('script_log_level')
-    if script_log_level is None:
-        logging.error(f'Не удалось загрузить из конфигурационного файла значение: script_log_level')
-        sys.exit(1)
-
-    log_format = os.getenv('log_format')
-    if log_format is None:
-        logging.error(f'Не удалось загрузить из конфигурационного файла значение: log_format')
-        sys.exit(1)
-
-    log_datefmt = os.getenv('log_datefmt')
-    if log_datefmt is None:
-        logging.error(f'Не удалось загрузить из конфигурационного файла значение: log_datefmt')
-        sys.exit(1)
-
-    log_encoding = os.getenv('log_encoding')
-    if log_encoding is None:
-        logging.error(f'Не удалось загрузить из конфигурационного файла значение: log_encoding')
-        sys.exit(1)
-
     ad_domain = os.getenv('ad_domain')
     if ad_domain is None:
         logging.error(f'Не удалось загрузить из конфигурационного файла значение: ad_domain')
@@ -224,11 +225,6 @@ if __name__ == '__main__':
     except ValueError:
         logging.error(f"Значение 'expiry' должно быть целым числом. Используется значение по умолчанию: {DEFAULT_EXPIRY}")
         expiry = DEFAULT_EXPIRY
-
-    # Получим числовое значение уровня логирования
-    level = logging.getLevelName(script_log_level)
-    # Настраиваем логгирование всех действий скрипта в файл
-    setup_logging(script_log_file, logging.getLevelName(script_log_level), log_format, log_datefmt, log_encoding)
 
     if len(sys.argv) > 1:  # проверяем, есть ли аргументы командной строки
         formatted_username = format_username(sys.argv[1], ad_domain, ipa_domain)
