@@ -15,7 +15,7 @@
 1. Убедитесь, что у вас установлен Python версии 3.x.
 2. Установите необходимые зависимости, используя `pip`:
 
-```bash
+
 pip install ldap3 python-dotenv
 
 ## Использование
@@ -26,9 +26,14 @@ pip install ldap3 python-dotenv
 AuthorizedKeysCommand /usr/bin/env SSH_GET_PUBKEY=/opt/get_pub_ssh_key /opt/get_pub_ssh_key/bin/get_ssh_pub_key.py %u
 AuthorizedKeysCommandUser root
 
-## Скрипт для синхронизации SSH ключей из Active Directory compare_ad_ssh_keys_with_cache.py
+# Скрипт для синхронизации SSH ключей из Active Directory compare_ad_ssh_keys_with_cache.py
 Этот скрипт предназначен для извлечения и синхронизации публичных SSH ключей пользователей из Active Directory (AD) с локальной системой или приложением. Он поддерживает кэширование ключей для уменьшения нагрузки на сервер AD и ускорения процесса аутентификации.
 
+
+
+## Настройка автоматического выполнения
+
+Для автоматического выполнения скрипта сравнения ключей SSH из Active Directory с кэшированными ключами можно настроить systemd сервис. Ниже приведен пример конфигурации сервиса.
 
 
 
