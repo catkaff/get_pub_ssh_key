@@ -1,4 +1,4 @@
-# Скрипт для получения публичных SSH ключей пользователя
+# Скрипт для получения публичных SSH ключей пользователя get_ssh_pub_key.py
 
 Этот скрипт предназначен для получения публичных SSH ключей пользователя из Active Directory (AD) с возможностью кэширования и автоматическим обновлением кэша. Также скрипт может читать локальные публичные ключи пользователя, если они существуют.
 
@@ -25,4 +25,8 @@ pip install ldap3 python-dotenv
 
 AuthorizedKeysCommand /usr/bin/env SSH_GET_PUBKEY=/opt/get_pub_ssh_key /opt/get_pub_ssh_key/bin/get_ssh_pub_key.py %u
 AuthorizedKeysCommandUser root
+
+# Скрипт для синхронизации SSH ключей из Active Directory compare_ad_ssh_keys_with_cache.py
+
+
 
